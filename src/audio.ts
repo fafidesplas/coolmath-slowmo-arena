@@ -267,6 +267,35 @@ export class Sfx {
     this.tone(58, 0.13, { to: 34, vol: vol * 0.9, raw: true });
     this.tone(52, 0.13, { to: 30, vol: vol * 0.6, raw: true, delay: 0.17 });
   }
+  hit(pan = 0): void {
+    this.noise(0.09, { type: 'highpass', f: 1800, vol: 0.3, pan });
+    this.tone(320, 0.12, { type: 'triangle', to: 120, vol: 0.2, pan });
+    this.tone(2400 + Math.random() * 1200, 0.2, { vol: 0.05, pan });
+  }
+  freeze(pan = 0): void {
+    this.noise(0.5, { type: 'highpass', f: 5000, to: 1800, vol: 0.22, pan });
+    for (let i = 0; i < 5; i++) this.tone(2200 + i * 420, 0.5, { to: 1500 + i * 300, vol: 0.05, pan, delay: i * 0.03 });
+  }
+  zap(pan = 0): void {
+    this.noise(0.16, { f: 3200, q: 6, vol: 0.4, pan });
+    this.tone(1100, 0.18, { type: 'sawtooth', to: 160, vol: 0.12, pan });
+    this.noise(0.3, { type: 'lowpass', f: 600, to: 120, vol: 0.25, pan, delay: 0.04 });
+  }
+  hurt(): void {
+    this.tone(210, 0.5, { type: 'sawtooth', to: 55, vol: 0.25 });
+    this.noise(0.4, { type: 'lowpass', f: 1800, to: 150, vol: 0.5 });
+  }
+  catchArrow(): void {
+    this.tone(180, 0.06, { type: 'triangle', to: 90, vol: 0.2 });
+    this.tone(740, 0.16, { type: 'triangle', to: 1180, vol: 0.12, delay: 0.03 });
+  }
+  immune(pan = 0): void {
+    this.tone(190, 0.12, { type: 'square', to: 150, vol: 0.06, pan });
+    this.noise(0.08, { f: 700, q: 3, vol: 0.12, pan });
+  }
+  levelUp(): void {
+    [392, 523.3, 659.3, 784, 1046.5].forEach((f, i) => this.tone(f, 0.9, { type: 'triangle', vol: 0.08, delay: i * 0.07, raw: true }));
+  }
   click(): void {
     this.tone(660, 0.06, { type: 'triangle', vol: 0.06, raw: true });
   }

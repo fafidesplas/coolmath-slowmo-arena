@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { Ctx } from './ctx';
 import { ARENA } from './world';
+import { EL_COLOR, EL_HEX, type Element } from './elements';
+import { makeItem } from './items';
 
 export type ProjKind = 'arrow' | 'orb' | 'fireball';
 type Owner = 'enemy' | 'player';
@@ -44,6 +46,20 @@ const TRAIL_COLOR: Record<string, number> = {
   'player-orb': 0x2fa8ff,
   'player-fireball': 0xff7a1a,
 };
+function trailColor(p: { kind: ProjKind; owner: Owner; element: Element }): number {
+  if (p.element !== 'none' && p.kind !== 'fireball') return EL_HEX[p.element];
+  return TRAIL_COLOR[`${p.owner}-${p.kind}`] ?? 0x2fa8ff;
+}
+const shellMats = new Map<number, THREE.MeshBasicMaterial>();
+function shellMat(color: number): THREE.MeshBasicMaterial {
+  let m = shellMats.get(color);
+  if (!m) {
+    m = M.orbShell.clone();
+    m.color.setHex(color);
+    shellMats.set(color, m);
+  }
+  return m;
+}
 
 const C = {
   orb: new THREE.Color(0xff3ac0),
@@ -71,8 +87,11 @@ export class Projectile {
   age = 0;
   emitAcc = 0;
   shell: THREE.Mesh | null = null;
+  damage = 2;
+  /** bursts into its element on impact (staff shots) */
+  burst = false;
 
-  constructor(public kind: ProjKind, public owner: Owner) {
+  constructor(public kind: ProjKind, public owner: Owner, public element: Element = 'none') {
     if (kind === 'arrow') {
       const g = new THREE.Group();
       g.add(new THREE.Mesh(G.shaft, M.shaft), new THREE.Mesh(G.head, M.head));
@@ -98,7 +117,7 @@ export class Projectile {
       this.trailWidth = fire ? 0.2 : 0.16;
     }
     this.trailMat = new THREE.MeshBasicMaterial({
-      color: TRAIL_COLOR[`${owner}-${kind}`],
+      color: trailColor(this),
       transparent: true,
       opacity: 0.65,
       depthWrite: false,
@@ -106,6 +125,22 @@ export class Projectile {
     });
     this.trail = new THREE.Mesh(trailGeo, this.trailMat);
     this.trail.frustumCulled = false;
+    this.recolor();
+  }
+
+  /** Match shell / trail colours to the current owner and element. */
+  recolor(): void {
+    this.trailMat.color.setHex(trailColor(this));
+    if (this.shell && this.kind === 'orb') {
+      if (this.element !== 'none') this.shell.material = shellMat(EL_HEX[this.element]);
+      else this.shell.material = this.owner === 'player' ? shellMat(0x3aaaff) : M.orbShell;
+    }
+  }
+
+  get sparkColor(): THREE.Color {
+    if (this.kind === 'fireball') return Math.random() < 0.5 ? C.fire : C.fireHot;
+    if (this.element !== 'none') return EL_COLOR[this.element];
+    return this.owner === 'enemy' ? C.orb : C.player;
   }
 }
 
@@ -120,8 +155,9 @@ export class Projectiles {
     scene.add(this.light);
   }
 
-  spawn(kind: ProjKind, owner: Owner, pos: THREE.Vector3, vel: THREE.Vector3): Projectile {
-    const p = new Projectile(kind, owner);
+  spawn(kind: ProjKind, owner: Owner, pos: THREE.Vector3, vel: THREE.Vector3, element: Element = 'none', damage = 2): Projectile {
+    const p = new Projectile(kind, owner, element);
+    p.damage = damage;
     p.pos.copy(pos);
     p.origin.copy(pos);
     p.vel.copy(vel);
@@ -131,7 +167,7 @@ export class Projectiles {
     return p;
   }
 
-  private remove(p: Projectile): void {
+  remove(p: Projectile): void {
     const i = this.list.indexOf(p);
     if (i >= 0) this.list.splice(i, 1);
     this.scene.remove(p.mesh, p.trail);
@@ -143,21 +179,12 @@ export class Projectiles {
     this.light.intensity = 0;
   }
 
-  /** Send a projectile back where the player is looking (with gentle aim assist). */
-  deflect(p: Projectile, perfect: boolean): void {
-    const ctx = this.ctx;
-    const dir = this.aimAssist(p.pos, ctx.player.forward, 0.9);
-    const speed = Math.max(p.vel.length() * 1.4, p.kind === 'arrow' ? 26 : 16);
-    p.vel.copy(dir).multiplyScalar(speed);
+  /** Hand an enemy projectile over to the player. */
+  turn(p: Projectile, damage: number): void {
     p.owner = 'player';
+    p.damage = damage;
     p.origin.copy(p.pos);
-    p.trailMat.color.setHex(TRAIL_COLOR[`player-${p.kind}`] ?? 0x2fa8ff);
-    if (p.shell && p.kind === 'orb') {
-      const m = M.orbShell.clone();
-      m.color.setHex(0x3aaaff);
-      p.shell.material = m;
-    }
-    ctx.deflected(p.pos, perfect);
+    p.recolor();
   }
 
   /** Direction from `from` along `fwd`, nudged toward the best-aligned enemy. */
@@ -179,7 +206,7 @@ export class Projectiles {
     return out.normalize();
   }
 
-  explode(pos: THREE.Vector3): void {
+  explode(pos: THREE.Vector3, damage = 4): void {
     const ctx = this.ctx;
     ctx.particles.burst(pos, 46, C.fire, 9, 0.12, 0.9, 1.5);
     ctx.particles.burst(pos, 20, C.fireHot, 5, 0.18, 0.6);
@@ -189,7 +216,7 @@ export class Projectiles {
     for (const e of [...ctx.enemies]) {
       if (!e.alive) continue;
       tmp.set(e.pos.x - pos.x, 1 - pos.y, e.pos.z - pos.z);
-      if (tmp.length() < 3.2) ctx.killEnemy(e, tmp.setY(0.6).normalize(), 9);
+      if (tmp.length() < 3.2) ctx.damageEnemy(e, damage, 'fire', tmp.setY(0.6).normalize().clone(), 9, { knock: 5 });
     }
     for (const p of [...this.list]) {
       if (p.owner === 'enemy' && p.pos.distanceTo(pos) < 3) {
@@ -202,17 +229,36 @@ export class Projectiles {
 
   private impactWorld(p: Projectile): void {
     const ctx = this.ctx;
-    if (p.kind === 'arrow') {
-      p.stuck = true;
-      p.stuckT = 0;
-      p.pos.y = Math.max(p.pos.y, 0.05);
+    if (p.owner === 'enemy' && p.element === 'fire') {
+      // fire shots burst where they land: stand clear
+      ctx.particles.burst(p.pos, 30, C.fire, 6, 0.1, 0.7, 1.5);
+      ctx.particles.burst(p.pos, 12, C.fireHot, 3, 0.14, 0.5);
+      this.light.position.copy(p.pos);
+      this.light.intensity = 40;
+      this.lightT = 0.4;
+      ctx.explosion(p.pos);
+      const pl = ctx.player;
+      if (pl.alive && Math.hypot(p.pos.x - pl.pos.x, p.pos.z - pl.pos.z) < 1.7 && p.pos.y < 2.6) ctx.playerHit(p.pos, 'fire');
+      this.remove(p);
+      return;
+    }
+    if (p.burst) {
+      ctx.burst(p.pos, p.element, false);
+      this.remove(p);
+    } else if (p.kind === 'arrow') {
+      // a spent arrow stays where it lands and can be picked up again
+      p.pos.y = Math.max(p.pos.y, 0.12);
+      const it = ctx.items.spawn(makeItem('arrow'), p.pos, 'rest');
+      it.stuck = true;
+      it.group.quaternion.setFromUnitVectors(tmp.set(0, 1, 0), tmp2.copy(p.vel).normalize());
       ctx.sfx.thunk(ctx.pan(p.pos));
       ctx.particles.burst(p.pos, 5, C.spark, 2, 0.04, 0.3);
+      this.remove(p);
     } else if (p.kind === 'fireball') {
-      this.explode(p.pos);
+      this.explode(p.pos, p.damage);
       this.remove(p);
     } else {
-      ctx.particles.burst(p.pos, 18, p.owner === 'enemy' ? C.orb : C.player, 4, 0.08, 0.6);
+      ctx.particles.burst(p.pos, 18, p.sparkColor, 4, 0.08, 0.6);
       ctx.sfx.fizz(ctx.pan(p.pos));
       this.remove(p);
     }
@@ -242,19 +288,23 @@ export class Projectiles {
       const dist = tmp.length();
       if (dist < 2.6) {
         const facing = tmp.divideScalar(dist).dot(pl.forward);
-        if (pl.swingActive && dist < 2.5 && facing > 0.3) {
-          this.deflect(p, false);
-          return false;
+        const magic = p.kind !== 'arrow';
+        if (pl.swingActive && dist < 2.3 && facing > 0.45) {
+          // a swing cuts the shot out of the air
+          ctx.blocked(pos, magic, false);
+          this.remove(p);
+          return true;
         }
-        if (pl.blocking && dist < 1.6 && facing > 0.2) {
-          this.deflect(p, ctx.realTime - pl.blockStart < 0.3);
-          return false;
+        if (pl.blocking && dist < 1.5 && facing > 0.25) {
+          ctx.blocked(pos, magic, true);
+          this.remove(p);
+          return true;
         }
       }
       const dx = pos.x - pl.pos.x, dz = pos.z - pl.pos.z;
       const rr = 0.28 + p.radius;
       if (dx * dx + dz * dz < rr * rr && pos.y > 0.1 && pos.y < 1.85) {
-        ctx.playerHit(pos);
+        ctx.playerHit(pos, p.element);
         this.remove(p);
         return true;
       }
@@ -265,9 +315,12 @@ export class Projectiles {
         const rr = 0.45 + p.radius;
         if (dx * dx + dz * dz < rr * rr && pos.y < 2.0) {
           if (p.kind === 'fireball') {
-            this.explode(pos);
+            this.explode(pos, p.damage);
           } else {
-            ctx.killEnemy(e, tmp2.copy(p.vel).normalize(), 7);
+            if (p.kind === 'orb') ctx.particles.burst(pos, 12, p.sparkColor, 4, 0.07, 0.5);
+            const dir = tmp2.copy(p.vel).normalize().clone();
+            ctx.damageEnemy(e, p.damage, p.element, dir, 7, { chain: 1, from: p.origin });
+            if (p.burst) ctx.burst(pos, p.element, false);
           }
           this.remove(p);
           return true;
@@ -305,12 +358,12 @@ export class Projectiles {
       }
       if (!this.list.includes(p)) continue;
       // magical sparkle trail (emits on world time so it freezes with the world)
-      if (p.kind !== 'arrow') {
+      if (p.kind !== 'arrow' || p.element !== 'none') {
         p.emitAcc += dt;
         const fire = p.kind === 'fireball';
         while (p.emitAcc > 0.025) {
           p.emitAcc -= 0.025;
-          const col = fire ? (Math.random() < 0.5 ? C.fire : C.fireHot) : p.owner === 'enemy' ? C.orb : C.player;
+          const col = p.sparkColor;
           ctx.particles.spark(
             p.pos,
             (Math.random() - 0.5) * 1.2, (Math.random() - 0.3) * 1.2, (Math.random() - 0.5) * 1.2,

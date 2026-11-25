@@ -1,12 +1,17 @@
 /** Keyboard + mouse (pointer lock) and touch (virtual joystick / look drag / buttons). */
+const KEY_ACTIONS: Record<string, string> = {
+  KeyE: 'grab', KeyF: 'throw', KeyQ: 'throw',
+  Digit1: 'pick0', Digit2: 'pick1', Digit3: 'pick2',
+};
+
 export class Input {
   readonly keys = new Set<string>();
   lookDX = 0;
   lookDY = 0;
   attack = false;
-  fire = false;
-  push = false;
   restart = false;
+  /** One-shot actions this frame: spell0..3, throw, imbue, pick0..2 */
+  readonly actions = new Set<string>();
   mouseBlock = false;
   touchBlock = false;
   joyX = 0;
@@ -27,10 +32,9 @@ export class Input {
     addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
-      if (e.code === 'KeyQ') this.fire = true;
-      if (e.code === 'KeyE') this.push = true;
+      const act = KEY_ACTIONS[e.code];
+      if (act) this.actions.add(act);
       if (e.code === 'KeyR') this.restart = true;
-      if (e.code === 'KeyF') this.attack = true;
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -52,7 +56,7 @@ export class Input {
     document.addEventListener('mousedown', (e) => {
       if (!this.locked) return;
       if (e.button === 0) this.attack = true;
-      if (e.button === 2) this.mouseBlock = true;
+      if (e.button === 2) this.actions.add('throw');
     });
     document.addEventListener('mouseup', (e) => {
       if (e.button === 2) this.mouseBlock = false;
@@ -131,8 +135,7 @@ export class Input {
     if (act === 'block') this.touchBlock = down;
     if (!down) return;
     if (act === 'attack') this.attack = true;
-    if (act === 'fire') this.fire = true;
-    if (act === 'push') this.push = true;
+    else this.actions.add(act);
   }
 
   get moveX(): number {
@@ -150,7 +153,8 @@ export class Input {
   /** Clear one-shot inputs at the end of a frame. */
   endFrame(): void {
     this.lookDX = this.lookDY = 0;
-    this.attack = this.fire = this.push = this.restart = false;
+    this.attack = this.restart = false;
+    this.actions.clear();
   }
 
   resetTouch(): void {

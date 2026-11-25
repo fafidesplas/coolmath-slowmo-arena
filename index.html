@@ -11,25 +11,24 @@
     <div id="app"></div>
     <div id="hud" class="hidden">
       <div id="crosshair"></div>
+      <div id="prompt"></div>
       <div id="timebar"><div id="timefill"></div><span>TIME</span></div>
-      <div id="waveinfo"></div>
-      <div id="bottom">
-        <div id="mana"><div id="manafill"></div></div>
-        <div id="spells">
-          <div class="spell" id="sp-fire"><b>Q</b>Fireball</div>
-          <div class="spell" id="sp-push"><b>E</b>Force push</div>
-        </div>
+      <div id="status">
+        <div id="lvl">LEVEL 1</div>
+        <div id="xp"><div id="xpfill"></div></div>
+        <div id="hearts"></div>
       </div>
+      <div id="held"></div>
       <div id="hint"></div>
+      <div id="fx"></div>
     </div>
     <div id="banner"></div>
     <div id="touch" class="hidden">
       <div id="joy-base"><div id="joy-knob"></div></div>
       <div id="tbtns">
-        <button class="tbtn fire" data-act="fire">FIRE</button>
-        <button class="tbtn push" data-act="push">PUSH</button>
-        <button class="tbtn block" data-act="block">BLOCK</button>
-        <button class="tbtn attack" data-act="attack">SWORD</button>
+        <button class="tbtn grab hidden" data-act="grab">GRAB</button>
+        <button class="tbtn throw" data-act="throw">THROW</button>
+        <button class="tbtn attack" data-act="attack">ATTACK</button>
       </div>
     </div>
     <div id="screen"></div>
